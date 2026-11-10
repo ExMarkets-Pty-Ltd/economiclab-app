@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout";
 import { useAuth } from "../context/AuthContext";
 
 export default function RegisterPage() {
   const { signUp, configured } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -18,7 +19,11 @@ export default function RegisterPage() {
     setError("");
     setSubmitting(true);
     try {
-      await signUp(email.trim(), password);
+      const { session } = await signUp(email.trim(), password);
+      if (session) {
+        navigate("/onboarding", { replace: true });
+        return;
+      }
       setSuccess(true);
     } catch (authError) {
       setError(authError.message || "We couldn't create your account. Please try again.");
@@ -37,7 +42,7 @@ export default function RegisterPage() {
       {!configured && <div className="notice" role="status">Authentication is not configured yet. Add the Supabase environment variables in your deployment settings.</div>}
       {error && <div className="form-error" role="alert">{error}</div>}
       {success ? (
-        <div className="success-panel" role="status"><CheckCircle2 size={26} /><h3>Check your inbox</h3><p>If email confirmation is enabled, follow the link we sent to <strong>{email}</strong> to finish setting up your account.</p><Link to="/login">Return to sign in <ArrowRight size={14} /></Link></div>
+        <div className="success-panel" role="status"><CheckCircle2 size={26} /><h3>Check your inbox</h3><p>Follow the confirmation link sent to <strong>{email}</strong>. Your profile is created automatically, and you’ll be guided through setup after confirming your email.</p><Link to="/login">Return to sign in <ArrowRight size={14} /></Link></div>
       ) : (
         <form className="auth-form" onSubmit={handleSubmit}>
           <label htmlFor="email">Email address</label>

@@ -13,7 +13,7 @@ export default function AuthCallbackPage() {
       return undefined;
     }
     if (user) {
-      navigate("/dashboard", { replace: true });
+      navigate("/onboarding", { replace: true });
       return undefined;
     }
     const timeout = window.setTimeout(() => setExpired(true), 8000);

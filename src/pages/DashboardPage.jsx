@@ -1,15 +1,23 @@
 import { useState } from "react";
 import { Activity, ArrowDownRight, ArrowUpRight, Bell, BookOpen, CircleHelp, LogOut, Menu, Search, Settings2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Brand from "../components/Brand";
 import { useAuth } from "../context/AuthContext";
 
 export default function DashboardPage() {
-  const { user, signOut } = useAuth();
+  const { user, profile, subscription, signOut } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signOutError, setSignOutError] = useState("");
-  const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Researcher";
+  const displayName = profile?.full_name || user?.email?.split("@")[0] || "Researcher";
+  const subscriptionActive = Boolean(
+    subscription &&
+    ["active", "trialing"].includes(subscription.status) &&
+    (!subscription.expires_at || new Date(subscription.expires_at) > new Date()),
+  );
+  const researchAccess = subscriptionActive
+    ? subscription.plans?.name ?? "Active plan"
+    : "No active plan";
 
   async function handleSignOut() {
     setSignOutError("");
@@ -29,7 +37,7 @@ export default function DashboardPage() {
         <nav className="side-nav" aria-label="Main navigation">
           <a className="side-link active" href="/dashboard"><span className="side-link-icon"><Activity size={17} /></span>Overview</a>
           <span className="side-link disabled" aria-disabled="true"><span className="side-link-icon"><BookOpen size={17} /></span>Research library <span className="coming-soon">SOON</span></span>
-          <span className="side-link disabled" aria-disabled="true"><span className="side-link-icon"><Settings2 size={17} /></span>Preferences <span className="coming-soon">SOON</span></span>
+          <Link className="side-link" to="/profile"><span className="side-link-icon"><Settings2 size={17} /></span>Your profile</Link>
         </nav>
         <div className="sidebar-bottom">
           <a className="help-link" href="mailto:hello@economiclab.co.za"><CircleHelp size={17} /> Help &amp; support <ArrowUpRight size={14} /></a>
@@ -62,7 +70,7 @@ export default function DashboardPage() {
           <div className="section-heading"><div><h2>Workspace overview</h2><p>A secure space for your EconomicLab account.</p></div><span className="updated-label"><span /> LIVE ACCOUNT</span></div>
           <section className="overview-grid" aria-label="Account overview">
             <article className="overview-card"><div className="overview-card-top"><span>ACCOUNT STATUS</span><span className="metric-icon cyan"><Activity size={17} /></span></div><div className="overview-value">Active</div><div className="overview-foot"><span className="positive"><ArrowUpRight size={14} /> Verified session</span><span>Supabase Auth</span></div></article>
-            <article className="overview-card"><div className="overview-card-top"><span>RESEARCH ACCESS</span><span className="metric-icon slate"><BookOpen size={17} /></span></div><div className="overview-value">Getting started</div><div className="overview-foot"><span className="muted-status"><ArrowDownRight size={14} /> No resources yet</span><span>Library</span></div></article>
+            <article className="overview-card"><div className="overview-card-top"><span>RESEARCH ACCESS</span><span className="metric-icon slate"><BookOpen size={17} /></span></div><div className="overview-value">{researchAccess}</div><div className="overview-foot"><span className={subscriptionActive ? "positive" : "muted-status"}>{subscriptionActive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />} {subscriptionActive ? subscription.status : "Subscription required"}</span><span>{subscriptionActive ? "Subscription" : "Library"}</span></div></article>
             <article className="overview-card"><div className="overview-card-top"><span>ACCOUNT EMAIL</span><span className="metric-icon violet"><Bell size={17} /></span></div><div className="overview-email">{user?.email}</div><div className="overview-foot"><span className="positive"><span className="tiny-dot" /> Signed in</span><span>Personal account</span></div></article>
           </section>
 

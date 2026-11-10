@@ -62,6 +62,17 @@ button{color:inherit}
 .success-panel p{margin:0 0 16px;color:#99aab3;font-size:12px;line-height:1.7}
 .success-panel p strong{color:#e1ecef}
 .success-panel>a{font-size:11px}
+.profile-form label{display:flex;align-items:center;gap:8px}
+.optional-label{color:#758993;font-size:8px;font-weight:600;letter-spacing:.8px}
+.username-input>span{position:absolute;left:14px;color:#718690;font-size:13px}
+.profile-textarea{width:100%;min-height:74px;padding:12px;border:1px solid rgba(169,200,212,.16);border-radius:5px;outline:none;resize:vertical;background:#0e1e28;color:#e8f1f4;font:inherit;font-size:12px}
+.profile-textarea::placeholder{color:#61747f}
+.profile-textarea:focus{border-color:rgba(5,238,252,.65);box-shadow:0 0 0 3px rgba(5,238,252,.07)}
+.account-error-screen{display:grid;min-height:100vh;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 35%,rgba(5,238,252,.06),transparent 40%),#07131c}
+.account-error-card{width:min(100%,440px);padding:32px;border:1px solid var(--line);border-radius:8px;background:#0b1922}
+.account-error-card h1{margin:22px 0 8px;font-family:Manrope,sans-serif;font-size:22px}
+.account-error-card p{color:#96a8b1;font-size:12px;line-height:1.6}
+.account-error-card .primary-button{margin-top:20px}
 .loading-screen{display:flex;min-height:100vh;align-items:center;justify-content:center;gap:12px;background:#08151e;color:#a6b6bd;font-size:12px}
 .spinner{width:17px;height:17px;border:2px solid rgba(5,238,252,.2);border-top-color:var(--cyan);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
