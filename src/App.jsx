@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
+import EconomicLabAIPage from "./pages/EconomicLabAIPage";
+import ForecastingCentrePage from "./pages/ForecastingCentrePage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
@@ -23,6 +25,8 @@ export default function App() {
       <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><OnboardingPage editing /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/ai" element={<ProtectedRoute><EconomicLabAIPage /></ProtectedRoute>} />
+      <Route path="/forecasting" element={<ProtectedRoute><ForecastingCentrePage /></ProtectedRoute>} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

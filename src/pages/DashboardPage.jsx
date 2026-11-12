@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, ArrowDownRight, ArrowUpRight, Bell, BookOpen, CircleHelp, LogOut, Menu, Search, Settings2 } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, Bell, BookOpen, BrainCircuit, CircleHelp, LogOut, Menu, Search, Settings2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import Brand from "../components/Brand";
 import { useAuth } from "../context/AuthContext";
@@ -35,8 +35,9 @@ export default function DashboardPage() {
         <div className="sidebar-brand"><Brand /></div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="side-nav" aria-label="Main navigation">
-          <a className="side-link active" href="/dashboard"><span className="side-link-icon"><Activity size={17} /></span>Overview</a>
-          <span className="side-link disabled" aria-disabled="true"><span className="side-link-icon"><BookOpen size={17} /></span>Research library <span className="coming-soon">SOON</span></span>
+          <Link className="side-link active" to="/dashboard"><span className="side-link-icon"><Activity size={17} /></span>Overview</Link>
+          <Link className="side-link" to="/ai"><span className="side-link-icon"><BrainCircuit size={17} /></span>EconomicLab AI</Link>
+          <Link className="side-link" to="/forecasting"><span className="side-link-icon"><BookOpen size={17} /></span>Forecasting centre</Link>
           <Link className="side-link" to="/profile"><span className="side-link-icon"><Settings2 size={17} /></span>Your profile</Link>
         </nav>
         <div className="sidebar-bottom">
@@ -74,7 +75,16 @@ export default function DashboardPage() {
             <article className="overview-card"><div className="overview-card-top"><span>ACCOUNT EMAIL</span><span className="metric-icon violet"><Bell size={17} /></span></div><div className="overview-email">{user?.email}</div><div className="overview-foot"><span className="positive"><span className="tiny-dot" /> Signed in</span><span>Personal account</span></div></article>
           </section>
 
-          <section className="empty-state"><div className="empty-graphic"><BookOpen size={24} /></div><div><h3>Your research library is ready when you are.</h3><p>There are no research items available in this workspace yet. Check back later or contact the EconomicLab team for assistance.</p></div><a href="mailto:hello@economiclab.co.za" aria-label="Contact EconomicLab"><ArrowUpRight size={18} /></a></section>
+          <section className="research-launcher">
+            <div className="empty-graphic"><BrainCircuit size={24} /></div>
+            <div>
+              <h3>EconomicLab AI is now available.</h3>
+              <p>Open the research workspace to ask macro questions, review the news flow, and compare the latest economic forecasts.</p>
+            </div>
+            <Link to="/ai" className="secondary-button" aria-label="Open EconomicLab AI">
+              Open AI workspace <ArrowUpRight size={16} />
+            </Link>
+          </section>
           <footer className="dashboard-footer"><span>© {new Date().getFullYear()} EconomicLab <span className="footer-dot">·</span> Independent research. Informed decisions.</span><span>Private &amp; secure workspace</span></footer>
         </div>
       </main>
