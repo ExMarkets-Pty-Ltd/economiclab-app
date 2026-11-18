@@ -25,8 +25,8 @@ export default function App() {
       <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><OnboardingPage editing /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/ai" element={<ProtectedRoute><EconomicLabAIPage /></ProtectedRoute>} />
-      <Route path="/forecasting" element={<ProtectedRoute><ForecastingCentrePage /></ProtectedRoute>} />
+      <Route path="/ai" element={<ProtectedRoute premium requiredPermission="ai"><EconomicLabAIPage /></ProtectedRoute>} />
+      <Route path="/forecasting" element={<ProtectedRoute premium requiredPermission="forecasting"><ForecastingCentrePage /></ProtectedRoute>} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

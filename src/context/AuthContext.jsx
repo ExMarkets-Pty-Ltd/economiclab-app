@@ -18,10 +18,15 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(supabaseConfigured);
   const [profile, setProfile] = useState(null);
   const [subscription, setSubscription] = useState(null);
+  const [entitlement, setEntitlement] = useState(null);
+  const [entitlementUserId, setEntitlementUserId] = useState(null);
+  const [entitlementLoading, setEntitlementLoading] = useState(false);
+  const [entitlementError, setEntitlementError] = useState("");
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [accountUserId, setAccountUserId] = useState(null);
   const accountRequest = useRef(0);
+  const sessionRef = useRef(null);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -31,7 +36,10 @@ export function AuthProvider({ children }) {
       .getSession()
       .then(({ data, error }) => {
         if (error) throw error;
-        if (active) setSession(data.session);
+        if (active) {
+          sessionRef.current = data.session;
+          setSession(data.session);
+        }
       })
       .catch((error) => {
         console.error("Unable to restore the authentication session:", error);
@@ -43,6 +51,7 @@ export function AuthProvider({ children }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      sessionRef.current = nextSession;
       setSession(nextSession);
       setLoading(false);
     });
@@ -52,6 +61,49 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  const refreshEntitlement = useCallback(async () => {
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      setEntitlement(null);
+      setEntitlementUserId(null);
+      setEntitlementError("");
+      setEntitlementLoading(false);
+      return null;
+    }
+
+    setEntitlementLoading(true);
+    setEntitlementError("");
+    try {
+      const response = await fetch("/.netlify/functions/entitlement", {
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "Unable to verify subscription entitlement.");
+      }
+      const data = await response.json();
+      if (
+        sessionRef.current?.access_token === accessToken
+        && sessionRef.current?.user?.id
+      ) {
+        setEntitlement(data);
+        setEntitlementUserId(sessionRef.current.user.id);
+      }
+      return data;
+    } catch (error) {
+      if (sessionRef.current?.access_token === accessToken) {
+        setEntitlement(null);
+        setEntitlementUserId(null);
+        setEntitlementError(error.message || "Unable to verify subscription entitlement.");
+      }
+      throw error;
+    } finally {
+      if (sessionRef.current?.access_token === accessToken) {
+        setEntitlementLoading(false);
+      }
+    }
+  }, [session?.access_token]);
 
   const refreshAccount = useCallback(async (userId) => {
     if (!supabase) throw new Error("Supabase is not configured for this deployment.");
@@ -83,6 +135,9 @@ export function AuthProvider({ children }) {
         setSubscription(subscriptionResult.data);
         setAccountUserId(userId);
       }
+      refreshEntitlement().catch((error) => {
+        console.error("Unable to verify subscription entitlement:", error);
+      });
       return {
         profile: profileResult.data,
         subscription: subscriptionResult.data,
@@ -96,7 +151,7 @@ export function AuthProvider({ children }) {
     } finally {
       if (requestId === accountRequest.current) setAccountLoading(false);
     }
-  }, []);
+  }, [refreshEntitlement]);
 
   useEffect(() => {
     const userId = session?.user?.id;
@@ -104,6 +159,10 @@ export function AuthProvider({ children }) {
       accountRequest.current += 1;
       setProfile(null);
       setSubscription(null);
+      setEntitlement(null);
+      setEntitlementUserId(null);
+      setEntitlementError("");
+      setEntitlementLoading(false);
       setAccountError("");
       setAccountLoading(false);
       setAccountUserId(null);
@@ -163,11 +222,16 @@ export function AuthProvider({ children }) {
       loading,
       profile,
       subscription,
+      entitlement,
+      entitlementUserId,
+      entitlementLoading,
+      entitlementError,
       accountLoading,
       accountError,
       accountUserId,
       configured: supabaseConfigured,
       refreshAccount,
+      refreshEntitlement,
       updateProfile,
       signIn,
       signUp,
@@ -178,10 +242,15 @@ export function AuthProvider({ children }) {
       loading,
       profile,
       subscription,
+      entitlement,
+      entitlementUserId,
+      entitlementLoading,
+      entitlementError,
       accountLoading,
       accountError,
       accountUserId,
       refreshAccount,
+      refreshEntitlement,
       updateProfile,
       signIn,
       signUp,

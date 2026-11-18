@@ -1,23 +1,71 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, ArrowDownRight, ArrowUpRight, Bell, BookOpen, BrainCircuit, CircleHelp, LogOut, Menu, Search, Settings2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import Brand from "../components/Brand";
 import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabase";
 
 export default function DashboardPage() {
-  const { user, profile, subscription, signOut } = useAuth();
+  const { user, profile, signOut, session, entitlement } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const [plans, setPlans] = useState([]);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const displayName = profile?.full_name || user?.email?.split("@")[0] || "Researcher";
-  const subscriptionActive = Boolean(
-    subscription &&
-    ["active", "trialing"].includes(subscription.status) &&
-    (!subscription.expires_at || new Date(subscription.expires_at) > new Date()),
-  );
-  const researchAccess = subscriptionActive
-    ? subscription.plans?.name ?? "Active plan"
+  const entitlementActive = Boolean(entitlement?.granted);
+  const aiAccess = Boolean(entitlementActive && entitlement.permissions?.includes("ai"));
+  const forecastingAccess = Boolean(entitlementActive && entitlement.permissions?.includes("forecasting"));
+  const researchAccess = entitlementActive
+    ? entitlement.plan?.name ?? "Active plan"
     : "No active plan";
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase
+      .from("plans")
+      .select("id, name, description, price, billing_interval")
+      .eq("is_active", true)
+      .order("price", { ascending: true })
+      .then(({ data, error }) => {
+        if (!error) setPlans(data || []);
+      });
+  }, []);
+
+  async function startCheckout(planId) {
+    setCheckoutError("");
+    setCheckoutLoading(true);
+    try {
+      const response = await fetch("/.netlify/functions/create-checkout", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ planId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to start checkout.");
+
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = data.destination;
+      Object.entries(data.parameters).forEach(([name, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = String(value);
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    } catch (error) {
+      setCheckoutError(error.message || "Unable to start checkout.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
 
   async function handleSignOut() {
     setSignOutError("");
@@ -57,6 +105,7 @@ export default function DashboardPage() {
           <div className="topbar-actions"><div className="secure-label"><span /> SECURE WORKSPACE</div><button className="icon-button" aria-label="Search" type="button"><Search size={18} /></button><button className="icon-button" aria-label="Notifications" type="button"><Bell size={18} /></button></div>
         </header>
         {signOutError && <div className="dashboard-alert" role="alert">{signOutError}</div>}
+        {checkoutError && <div className="dashboard-alert" role="alert">{checkoutError}</div>}
         <div className="dashboard-content">
           <div className="welcome-row">
             <div><div className="dashboard-eyebrow">YOUR RESEARCH WORKSPACE</div><h1>Good to have you here, {displayName}.</h1><p>Your EconomicLab workspace is ready. Here’s where your research journey begins.</p></div>
@@ -71,20 +120,50 @@ export default function DashboardPage() {
           <div className="section-heading"><div><h2>Workspace overview</h2><p>A secure space for your EconomicLab account.</p></div><span className="updated-label"><span /> LIVE ACCOUNT</span></div>
           <section className="overview-grid" aria-label="Account overview">
             <article className="overview-card"><div className="overview-card-top"><span>ACCOUNT STATUS</span><span className="metric-icon cyan"><Activity size={17} /></span></div><div className="overview-value">Active</div><div className="overview-foot"><span className="positive"><ArrowUpRight size={14} /> Verified session</span><span>Supabase Auth</span></div></article>
-            <article className="overview-card"><div className="overview-card-top"><span>RESEARCH ACCESS</span><span className="metric-icon slate"><BookOpen size={17} /></span></div><div className="overview-value">{researchAccess}</div><div className="overview-foot"><span className={subscriptionActive ? "positive" : "muted-status"}>{subscriptionActive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />} {subscriptionActive ? subscription.status : "Subscription required"}</span><span>{subscriptionActive ? "Subscription" : "Library"}</span></div></article>
+            <article className="overview-card"><div className="overview-card-top"><span>RESEARCH ACCESS</span><span className="metric-icon slate"><BookOpen size={17} /></span></div><div className="overview-value">{researchAccess}</div><div className="overview-foot"><span className={entitlementActive ? "positive" : "muted-status"}>{entitlementActive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />} {entitlementActive ? entitlement.subscription?.status ?? "Active" : "Subscription required"}</span><span>{entitlementActive ? "Subscription" : "Library"}</span></div></article>
             <article className="overview-card"><div className="overview-card-top"><span>ACCOUNT EMAIL</span><span className="metric-icon violet"><Bell size={17} /></span></div><div className="overview-email">{user?.email}</div><div className="overview-foot"><span className="positive"><span className="tiny-dot" /> Signed in</span><span>Personal account</span></div></article>
           </section>
 
           <section className="research-launcher">
             <div className="empty-graphic"><BrainCircuit size={24} /></div>
             <div>
-              <h3>EconomicLab AI is now available.</h3>
-              <p>Open the research workspace to ask macro questions, review the news flow, and compare the latest economic forecasts.</p>
+              <h3>{aiAccess ? "EconomicLab AI is available." : "EconomicLab AI requires plan access."}</h3>
+              <p>{aiAccess
+                ? "Open the research workspace to ask macro questions, review the news flow, and compare the latest economic forecasts."
+                : "Choose a plan that includes AI access to open the research workspace."}</p>
             </div>
-            <Link to="/ai" className="secondary-button" aria-label="Open EconomicLab AI">
-              Open AI workspace <ArrowUpRight size={16} />
-            </Link>
+            {aiAccess ? (
+              <Link to="/ai" className="secondary-button" aria-label="Open EconomicLab AI">
+                Open AI workspace <ArrowUpRight size={16} />
+              </Link>
+            ) : (
+              <button type="button" className="secondary-button" disabled={plans.length === 0} onClick={() => document.querySelector('[aria-label="Subscription plans"]')?.scrollIntoView({ behavior: "smooth" })}>
+                View plans <ArrowUpRight size={16} />
+              </button>
+            )}
           </section>
+          {(!entitlementActive || !aiAccess || !forecastingAccess) && plans.length > 0 && (
+            <section className="welcome-card" aria-label="Subscription plans">
+              <div className="welcome-card-copy">
+                <div className="welcome-card-tag"><span /> ECONOMICLAB SUBSCRIPTION</div>
+                <h2>Unlock paid research access.</h2>
+                <p>Choose a recurring plan to enable premium EconomicLab features.</p>
+              </div>
+              <div className="chart-art" aria-label="Available plans">
+                {plans.map((plan) => (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    className="welcome-cta"
+                    disabled={checkoutLoading}
+                    onClick={() => startCheckout(plan.id)}
+                  >
+                    {plan.name} · R{Number(plan.price).toFixed(2)} / {plan.billing_interval}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           <footer className="dashboard-footer"><span>© {new Date().getFullYear()} EconomicLab <span className="footer-dot">·</span> Independent research. Informed decisions.</span><span>Private &amp; secure workspace</span></footer>
         </div>
       </main>

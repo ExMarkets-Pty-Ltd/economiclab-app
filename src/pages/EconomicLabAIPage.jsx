@@ -195,7 +195,7 @@ function AssistantMessageActions({ message, onCopy, copied }) {
 }
 
 export default function EconomicLabAIPage() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, session } = useAuth();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
@@ -207,6 +207,8 @@ export default function EconomicLabAIPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const [serviceError, setServiceError] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const objectUrlsRef = useRef(new Set());
@@ -313,53 +315,78 @@ export default function EconomicLabAIPage() {
     }
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     const text = draft.trim();
     if (!text && !attachments.length) return;
+    if (isSending) return;
 
-    const message = {
-      id: createId(),
-      sender: "user",
-      text,
-      attachments: attachments.map(({ id, name, type, previewUrl }) => ({
-        id,
-        name,
-        type,
-        previewUrl,
-      })),
-      createdAt: new Date().toISOString(),
-    };
+    setServiceError("");
+    setIsSending(true);
     const conversationId = activeConversationId ?? createId();
-
-    setConversations((current) => {
-      const existing = current.find((item) => item.id === conversationId);
-      if (existing) {
-        return current.map((item) =>
-          item.id === conversationId
-            ? { ...item, messages: [...item.messages, message], updatedAt: message.createdAt }
-            : item,
-        );
-      }
-      return [
-        {
-          id: conversationId,
-          title: getConversationTitle(text, attachments.length > 0),
-          createdAt: message.createdAt,
-          updatedAt: message.createdAt,
-          messages: [message],
+    try {
+      const response = await fetch("/.netlify/functions/ai", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${session?.access_token ?? ""}`,
         },
-        ...current,
+        body: JSON.stringify({ prompt: text, hasImages: attachments.length > 0 }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The AI request could not be completed.");
+
+      const createdAt = new Date().toISOString();
+      const messages = [
+        {
+          id: createId(),
+          sender: "user",
+          text,
+          createdAt,
+        },
+        {
+          id: createId(),
+          sender: "assistant",
+          text: result.text,
+          citations: result.citations || [],
+          createdAt,
+        },
       ];
-    });
-    setActiveConversationId(conversationId);
-    setDraft("");
-    setAttachments([]);
-    setAttachmentError("");
-    setCopyError("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.overflowY = "hidden";
+
+      setConversations((current) => {
+        const existing = current.find((item) => item.id === conversationId);
+        if (existing) {
+          return current.map((item) =>
+            item.id === conversationId
+              ? { ...item, messages: [...item.messages, ...messages], updatedAt: createdAt }
+              : item,
+          );
+        }
+        return [
+          {
+            id: conversationId,
+            title: getConversationTitle(text, false),
+            createdAt,
+            updatedAt: createdAt,
+            messages,
+          },
+          ...current,
+        ];
+      });
+      attachments.forEach(revokeAttachment);
+      setActiveConversationId(conversationId);
+      setDraft("");
+      setAttachments([]);
+      setAttachmentError("");
+      setCopyError("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.overflowY = "hidden";
+      }
+    } catch (error) {
+      setServiceError(error.message || "The AI request could not be completed.");
+    } finally {
+      setIsSending(false);
     }
   }
 
@@ -496,7 +523,7 @@ export default function EconomicLabAIPage() {
           </button>
           <div className="ai-title-wrap">
             <span className="ai-product-title"><BrainCircuit size={17} /> EconomicLab AI</span>
-            <span className="ai-local-label">Frontend preview</span>
+            <span className="ai-local-label">Secure AI service</span>
           </div>
           <button type="button" className="ai-topbar-new" onClick={startNewConversation}>
             <Plus size={16} /><span>New chat</span>
@@ -553,7 +580,7 @@ export default function EconomicLabAIPage() {
                 <div ref={scrollEndRef} />
               </div>
               <p className="ai-local-note" role="status">
-                This is a local-only preview. Your messages and images have not been sent or analysed, and no AI response is generated.
+                AI responses are provided by the secured EconomicLab service.
               </p>
             </section>
           ) : (
@@ -608,6 +635,7 @@ export default function EconomicLabAIPage() {
               ref={textareaRef}
               rows={1}
               value={draft}
+              disabled={isSending}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -633,6 +661,7 @@ export default function EconomicLabAIPage() {
                 <button
                   type="button"
                   className="ai-icon-button"
+                  disabled={isSending}
                   onClick={() => fileInputRef.current?.click()}
                   aria-label="Attach images"
                   title="Attach images"
@@ -642,6 +671,7 @@ export default function EconomicLabAIPage() {
                 <button
                   type="button"
                   className="ai-icon-button ai-image-button"
+                  disabled={isSending}
                   onClick={() => fileInputRef.current?.click()}
                   aria-label="Upload an image"
                   title="Upload an image"
@@ -653,18 +683,19 @@ export default function EconomicLabAIPage() {
               <button
                 type="submit"
                 className="ai-send-button"
-                disabled={!draft.trim() && !attachments.length}
+                disabled={isSending || (!draft.trim() && !attachments.length)}
                 aria-label="Send message"
-                title="Send message"
+                title={isSending ? "Sending request" : "Send message"}
               >
-                <ArrowUp size={18} />
+                {isSending ? <RefreshCw size={18} /> : <ArrowUp size={18} />}
               </button>
             </div>
             {attachmentError && <p className="ai-inline-error" role="alert">{attachmentError}</p>}
             {copyError && <p className="ai-inline-error" role="alert">{copyError}</p>}
+            {serviceError && <p className="ai-inline-error" role="alert">{serviceError}</p>}
           </form>
           <p id="ai-composer-note" className="ai-composer-note">
-            AI research and image analysis are not connected. Messages stay in this tab and are not sent or analysed.
+            Text prompts are sent to the authenticated AI service. Image analysis is not available yet.
           </p>
         </div>
       </main>
