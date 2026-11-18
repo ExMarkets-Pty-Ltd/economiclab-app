@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { evaluateEntitlement, normalizePlanFeatures } from "../functions/_shared/entitlement.mjs";
 import { payFastSignature, parseFormEncoded } from "../functions/_shared/payfast.mjs";
+import { getAdminSupabase } from "../functions/_shared/supabase.mjs";
+import { createPayFastItnHandler } from "../functions/payfast-itn.mjs";
 
 test("active subscriptions grant plan permissions", () => {
   const result = evaluateEntitlement({
@@ -111,4 +113,17 @@ test("form encoded PayFast values are parsed", () => {
   const params = parseFormEncoded("payment_status=COMPLETE&m_payment_id=EL-123&name=EconomicLab");
   assert.equal(params.payment_status, "COMPLETE");
   assert.equal(params.m_payment_id, "EL-123");
+});
+
+test("ITN returns a safe 500 when Supabase server configuration is unavailable", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const handler = createPayFastItnHandler(() => getAdminSupabase({}));
+  const response = await handler(new Request("https://economiclab.test/payfast-itn", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "",
+  }));
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: "Unable to process notification." });
 });

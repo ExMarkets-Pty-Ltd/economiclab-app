@@ -16,17 +16,16 @@ function addBillingPeriod(date, interval) {
   return next.toISOString();
 }
 
-export default async function payFastItn(request) {
+async function processPayFastItn(request, getSupabase) {
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
 
-  const rawBody = await request.text();
-  const params = parseFormEncoded(rawBody);
-  const supabase = getAdminSupabase();
-  const providerReference = params.pf_payment_id || params.m_payment_id || null;
+  let supabase = null;
+  let params = {};
+  let providerReference = null;
   let payment = null;
 
   async function recordEvent(status, verificationResult, errorMessage = null) {
-    if (!providerReference && !params.m_payment_id) return;
+    if (!supabase || (!providerReference && !params.m_payment_id)) return;
     await supabase
       .from("payment_events")
       .insert({
@@ -42,6 +41,11 @@ export default async function payFastItn(request) {
   }
 
   try {
+    const rawBody = await request.text();
+    params = parseFormEncoded(rawBody);
+    providerReference = params.pf_payment_id || params.m_payment_id || null;
+    supabase = getSupabase();
+
     const ip = getClientIp(request);
     if (!isTrustedPayFastIp(ip)) {
       await recordEvent("rejected", "invalid_source_ip", `Untrusted source IP: ${ip || "unknown"}`);
@@ -100,7 +104,7 @@ export default async function payFastItn(request) {
     }
 
     if (params.payment_status !== "COMPLETE") {
-      await supabase
+      const { error: paymentUpdateError } = await supabase
         .from("payments")
         .update({
           status: "failed",
@@ -109,6 +113,7 @@ export default async function payFastItn(request) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", payment.id);
+      if (paymentUpdateError) throw paymentUpdateError;
       await recordEvent("accepted", "valid_failed_payment", null);
       return jsonResponse({ received: true });
     }
@@ -125,11 +130,12 @@ export default async function payFastItn(request) {
     }
 
     if (params.pf_payment_id) {
-      const { data: existingPayment } = await supabase
+      const { data: existingPayment, error: existingPaymentError } = await supabase
         .from("payments")
         .select("id, status")
         .eq("provider_payment_id", params.pf_payment_id)
         .maybeSingle();
+      if (existingPaymentError) throw existingPaymentError;
       if (
         existingPayment?.status === "completed"
         && subscription.status === "active"
@@ -150,6 +156,15 @@ export default async function payFastItn(request) {
     const periodEnd = addBillingPeriod(periodStart, subscription.billing_interval || "month");
     const providerToken = params.token || subscription.provider_subscription_token || null;
 
+    const { data: plan, error: planError } = await supabase
+      .from("plans")
+      .select("features")
+      .eq("id", subscription.plan_id)
+      .maybeSingle();
+    if (planError) throw planError;
+    if (!plan) throw new Error("Subscription plan was not found.");
+    const permissions = normalizePlanFeatures(plan.features);
+
     const { error: paymentUpdateError } = await supabase
       .from("payments")
       .update({
@@ -161,6 +176,25 @@ export default async function payFastItn(request) {
       })
       .eq("id", payment.id);
     if (paymentUpdateError) throw paymentUpdateError;
+
+    const { error: entitlementDeleteError } = await supabase
+      .from("subscription_entitlements")
+      .delete()
+      .eq("subscription_id", subscription.id);
+    if (entitlementDeleteError) throw entitlementDeleteError;
+    if (permissions.length) {
+      const rows = permissions.map((permission) => ({
+        user_id: subscription.user_id,
+        subscription_id: subscription.id,
+        permission,
+        expires_at: periodEnd,
+        source: "payfast",
+      }));
+      const { error: entitlementError } = await supabase
+        .from("subscription_entitlements")
+        .insert(rows);
+      if (entitlementError) throw entitlementError;
+    }
 
     const { error: subscriptionUpdateError } = await supabase
       .from("subscriptions")
@@ -181,36 +215,21 @@ export default async function payFastItn(request) {
       .eq("id", subscription.id);
     if (subscriptionUpdateError) throw subscriptionUpdateError;
 
-    const { data: plan } = await supabase
-      .from("plans")
-      .select("features")
-      .eq("id", subscription.plan_id)
-      .maybeSingle();
-    const permissions = normalizePlanFeatures(plan?.features);
-
-    await supabase
-      .from("subscription_entitlements")
-      .delete()
-      .eq("subscription_id", subscription.id);
-    if (permissions.length) {
-      const rows = permissions.map((permission) => ({
-        user_id: subscription.user_id,
-        subscription_id: subscription.id,
-        permission,
-        expires_at: periodEnd,
-        source: "payfast",
-      }));
-      const { error: entitlementError } = await supabase
-        .from("subscription_entitlements")
-        .insert(rows);
-      if (entitlementError) throw entitlementError;
-    }
-
     await recordEvent("accepted", "valid", null);
     return jsonResponse({ received: true });
   } catch (error) {
     console.error("Unable to process PayFast ITN:", error);
-    await recordEvent("failed", "processing_error", error.message);
+    try {
+      await recordEvent("failed", "processing_error", error.message);
+    } catch (eventError) {
+      console.error("Unable to record PayFast ITN failure:", eventError);
+    }
     return jsonResponse({ error: "Unable to process notification." }, 500);
   }
 }
+
+export function createPayFastItnHandler(getSupabase = getAdminSupabase) {
+  return (request) => processPayFastItn(request, getSupabase);
+}
+
+export default createPayFastItnHandler();

@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { createAiOperationHandler } from "../functions/ai.mjs";
 import { evaluateEntitlement } from "../functions/_shared/entitlement.mjs";
 import { createPremiumOperationHandler } from "../functions/_shared/premium-operation.mjs";
-import { requireUser } from "../functions/_shared/supabase.mjs";
+import {
+  getAdminSupabase,
+  requireUser,
+  SupabaseConfigurationError,
+} from "../functions/_shared/supabase.mjs";
 
 const user = { id: "user-1" };
 const activePlan = { is_active: true, features: ["ai", "forecasting"] };
@@ -74,6 +78,66 @@ test("invalid bearer token is rejected by Supabase user verification", async () 
   );
   assert.equal(verifiedToken, "invalid-token");
   assert.equal(result, null);
+});
+
+test("invalid and expired bearer tokens return a safe unauthorized response", async () => {
+  for (const authError of [new Error("Invalid token"), new Error("JWT expired")]) {
+    const handler = createPremiumOperationHandler({
+      permission: "ai",
+      method: "POST",
+      dailyLimit: 10,
+      authenticate: (request) => requireUser(request, () => ({
+        auth: { getUser: async () => ({ data: { user: null }, error: authError }) },
+      })),
+      loadEntitlement: async () => {
+        throw new Error("Entitlements must not be loaded for an invalid token.");
+      },
+      consumeUsage: async () => {
+        throw new Error("Usage must not be consumed for an invalid token.");
+      },
+      execute: async () => {
+        throw new Error("The operation must not execute for an invalid token.");
+      },
+    });
+
+    const response = await handler(postRequest({}));
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+      error: "A valid bearer token is required.",
+      code: "unauthorized",
+    });
+  }
+});
+
+test("missing Supabase server configuration raises a safe configuration error", () => {
+  assert.throws(
+    () => getAdminSupabase({}),
+    (error) => {
+      assert.ok(error instanceof SupabaseConfigurationError);
+      assert.equal(error.message, "Supabase server configuration is unavailable.");
+      return true;
+    },
+  );
+});
+
+test("premium operations return a safe 500 when Supabase server configuration is unavailable", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const handler = createPremiumOperationHandler({
+    permission: "ai",
+    method: "POST",
+    dailyLimit: 10,
+    authenticate: (request) => requireUser(request, () => getAdminSupabase({})),
+    loadEntitlement: async () => ({ permissions: ["ai"] }),
+    consumeUsage: async () => ({ allowed: true }),
+    execute: async () => ({ success: true }),
+  });
+
+  const response = await handler(postRequest({}));
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    error: "The premium operation could not be completed.",
+    code: "operation_failed",
+  });
 });
 
 test("expired subscriptions are denied at the backend", async () => {
